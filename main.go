@@ -97,6 +97,16 @@ func (c *cachedURLMap) refresh() error {
 
 func (s *server) handler(w http.ResponseWriter, req *http.Request) {
 	if req.URL.Path == "/" {
+		redirTo, err := s.findRedirect(req.URL)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to find redirect: %v", err)
+			return
+		}
+		if redirTo != nil {
+			log.Printf("redirecting=%q to=%q", req.URL, redirTo.String())
+			http.Redirect(w, req, redirTo.String(), http.StatusFound)
+			return
+		}
 		s.home(w, req)
 		return
 	}
@@ -151,6 +161,17 @@ func (s *server) redirect(w http.ResponseWriter, req *http.Request) {
 
 func (s *server) findRedirect(req *url.URL) (*url.URL, error) {
 	path := strings.ToLower(strings.TrimPrefix(req.Path, "/"))
+
+	if path == "" {
+		v, err := s.db.Get("/")
+		if err != nil {
+			return nil, err
+		}
+		if v != nil {
+			return prepRedirect(v, "", req.Query()), nil
+		}
+		return nil, nil
+	}
 
 	segments := strings.Split(path, "/")
 	var discard []string
